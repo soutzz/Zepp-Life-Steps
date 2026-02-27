@@ -633,28 +633,6 @@ const Home = () => {
           />
         </div>
       </Modal>
-
-      <Modal
-        title="微信小程序"
-        open={showQRCode}
-        onCancel={() => setShowQRCode(false)}
-        footer={[
-          <Button key="close" onClick={() => setShowQRCode(false)}>
-            关闭
-          </Button>
-        ]}
-        width={300}
-        className="glass-modal"
-      >
-        <div className="qrcode-container">
-          <img 
-            src="https://cdn.jsdelivr.net/gh/miloce/Zepp-Life-Steps/img/MiniProgramCode.png" 
-            alt="微信小程序二维码" 
-            className="qrcode-image"
-          />
-          <Text>扫描二维码使用微信小程序版本</Text>
-        </div>
-      </Modal>
     </div>
   );
 };
