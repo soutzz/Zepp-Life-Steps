@@ -23,7 +23,7 @@ const zeppHeaders = {
 async function zeppLogin(account, password) {
   try {
     // 步骤1：获取授权token
-    const authUrl = 'https://api.zepp.com/v1/oauth2/token';
+    const authUrl = 'https://api.zepp.fit/v1/oauth2/token';
     const authParams = new URLSearchParams();
     authParams.append('grant_type', 'password');
     authParams.append('username', account);
@@ -51,7 +51,7 @@ async function zeppLogin(account, password) {
     console.log('Zepp登录成功 - accessToken:', accessToken.substring(0, 20) + '...');
 
     // 步骤2：获取绑定的设备ID（步数修改需要设备ID）
-    const deviceUrl = 'https://api.zepp.com/v1/users/me/devices';
+    const deviceUrl = 'https://api.zepp.fit/v1/users/me/devices';
     const deviceRes = await axios.get(deviceUrl, {
       headers: {
         ...zeppHeaders,
@@ -90,7 +90,7 @@ async function zeppUpdateSteps(accessToken, deviceId, steps) {
     console.log('Zepp更新步数 - 日期:', today, '目标步数:', steps);
 
     // Zepp步数接口（2025新版）
-    const stepUrl = 'https://api.zepp.com/v1/health/daily_summary';
+    const stepUrl = 'https://api.zepp.fit/v1/health/daily_summary';
     const stepData = new URLSearchParams();
     stepData.append('device_id', deviceId);
     stepData.append('date', today);
