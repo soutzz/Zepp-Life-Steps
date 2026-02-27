@@ -511,7 +511,7 @@ const Home = () => {
         <div className="action-buttons">
           <Button 
             icon={<GithubOutlined />} 
-            href="https://github.com/miloce/Zepp-Life-Steps" 
+            href="https://github.com/soutzz/Zepp-Life-Steps" 
             target="_blank"
             className="glass-button-secondary"
           >
@@ -532,7 +532,7 @@ const Home = () => {
               © 2025 Zepp-Life-Steps
             </Text>
             <Text type="secondary">
-              Powered By <Link href="https://github.com/miloce" target="_blank">Miloce</Link>
+              Powered By <Link href="https://github.com/soutzz" target="_blank">soutzz</Link>
             </Text>
           </div>
         </div>
