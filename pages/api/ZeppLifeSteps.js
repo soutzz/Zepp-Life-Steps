@@ -224,4 +224,4 @@ module.exports = {
 };
 
 // 调用示例（替换为你的账号密码）
-testRun('testshubu666@qq.com', 'shubu666', 10000);
+testRun('testshubu666@qq.com', 'shubu666', 30000);
