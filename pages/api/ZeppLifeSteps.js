@@ -164,7 +164,7 @@ async function testRun(account, password, targetSteps = 30000) {
 
 // 导出函数
 module.exports = {
-  loginV2,
+  login: loginV2,
   updateSteps,
   testRun
 };
