@@ -1,17 +1,15 @@
 # Zepp-Life-Steps
 
-[![star](https://img.shields.io/github/stars/miloce/Zepp-Life-Steps.svg?logo=github)](https://github.com/miloce/Zepp-Life-Steps)
-[![license](https://img.shields.io/github/license/miloce/Zepp-Life-Steps)](https://github.com/miloce/Zepp-Life-Steps)
+[![star](https://img.shields.io/github/stars/soutzz/Zepp-Life-Steps.svg?logo=github)](https://github.com/soutzz/Zepp-Life-Steps)
+[![license](https://img.shields.io/github/license/soutzz/Zepp-Life-Steps)](https://github.com/soutzz/Zepp-Life-Steps)
 [![vercel](https://img.shields.io/badge/部署-Vercel-blue?logo=vercel)](https://vercel.com)
-[![微信小程序](https://img.shields.io/badge/微信小程序-可用-green?logo=wechat)](https://mp.weixin.qq.com)
 
 > 通过华米运动的 API 提交运动步数 😒
 > 可实现同步运动步数至微信、支付宝等
 
 ## 📱 在线体验
 
-- [Web 版本](https://steps.luozhinet.com)
-- 微信小程序：扫描下方二维码
+- [Web 版本](https://shubu.soutzz.fun)
 
 ## ✨ 功能特点
 
@@ -22,27 +20,14 @@
 - 📊 支持历史记录查看
 - 🔄 自动同步到微信、支付宝运动
 
-## 📱 微信小程序版本
-
-扫描下方二维码，即可使用微信小程序版本，随时随地修改步数！
-
-![微信小程序二维码](https://cdn.jsdelivr.net/gh/miloce/Zepp-Life-Steps/img/MiniProgramCode.png)
-
 ## 📖 使用方法
 
 ### Web 版本
 
-1. 访问我们的网站 [steps.luozhinet.com](https://steps.luozhinet.com)
+1. 访问我们的网站 [shubu.soutzz.fun](https://shubu.soutzz.fun)
 2. 输入您的 Zepp Life 账号和密码
 3. 设置您想要的步数
 4. 点击提交，等待同步完成
-
-### 微信小程序版本
-
-1. 扫描上方二维码进入小程序
-2. 登录您的 Zepp Life 账号
-3. 设置步数并提交
-4. 等待同步完成
 
 ## 🛠️ 本地开发
 
@@ -50,7 +35,7 @@
 
 1. 克隆仓库：
 ```bash
-git clone https://github.com/miloce/Zepp-Life-Steps.git
+git clone https://github.com/soutzz/Zepp-Life-Steps.git
 cd Zepp-Life-Steps
 ```
 
@@ -70,7 +55,7 @@ npm run dev
 
 想要自己部署一个实例？超级简单！
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/import/project?template=https://github.com/miloce/Zepp-Life-Steps.git)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/import/project?template=https://github.com/soutzz/Zepp-Life-Steps.git)
 
 1. 将代码推送到 GitHub 仓库
 2. 在 Vercel 中导入该仓库
