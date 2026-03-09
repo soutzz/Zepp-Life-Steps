@@ -1,53 +1,267 @@
-// 使用 require 而不是 import，避免 ES 模块问题
-const zeppLifeSteps = require('./ZeppLifeSteps');
+const axios = require('axios');
+const moment = require('moment');
+const { URLSearchParams } = require('url');
 
-// 使用 module.exports 而不是 export default
-module.exports = async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, message: '方法不允许' });
-  }
+// 配置请求头
+const headers = {
+  'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 14; SM-G9880 Build/UP1A.231005.007)',
+  'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+};
 
+// 华米客户端配置
+const HUAMI_CONFIG = {
+  clientId: 'XmMifit',
+  clientSecret: 'd3236847d210e2a8bd0e2d2a46b24954', // 固定的client_secret
+  redirectUri: 'https://s3-us-west-2.amazonaws.com/hm-registration/successsignin.html',
+  appName: 'com.xiaomi.hm.health',
+  appVersion: '6.9.5'
+};
+
+// 获取登录code
+async function getCode(location) {
+  const codePattern = /(?<=access=).*?(?=&)/;
+  const match = location.match(codePattern);
+  return match ? match[0] : null;
+}
+
+// 登录获取token
+async function login(account, password) {
   try {
-    const { account, password, steps } = req.body;
+    // 判断是手机号还是邮箱
+    const isPhone = /^\+?\d+$/.test(account);
+    console.log('登录账号类型:', isPhone ? '手机号' : '邮箱');
+    console.log('登录账号:', account);
 
-    if (!account || !password) {
-      return res.status(400).json({ success: false, message: '账号和密码不能为空' });
+    // 第一步：获取access code
+    const url1 = 'https://api-user.huami.com/registrations/tokens';
+    const data1 = {
+      client_id: HUAMI_CONFIG.clientId,
+      client_secret: HUAMI_CONFIG.clientSecret,
+      password: password,
+      redirect_uri: HUAMI_CONFIG.redirectUri,
+      token: 'access',
+      country_code: 'CN'
+    };
+
+    // 如果是手机号,使用手机号字段，否则使用email字段
+    if (isPhone) {
+      data1.phone_number = account;
+    } else {
+      data1.email = account;
     }
 
-    // 设置默认步数
-    const targetSteps = steps || Math.floor(Math.random() * 10000) + 20000;
-    console.log('目标步数:', targetSteps);
+    console.log('第一步请求URL:', url1);
+    console.log('第一步请求数据:', data1);
 
-    // 登录获取token
-    console.log('开始登录流程...');
-    const { loginToken, userId } = await zeppLifeSteps.login(account, password);
+    const response1 = await axios.post(url1, data1, {
+      headers: headers,
+      maxRedirects: 0,
+      validateStatus: function (status) {
+        return status >= 200 && status < 400;
+      }
+    });
+
+    console.log('第一步响应状态码:', response1.status);
+    console.log('第一步响应头:', response1.headers);
+    console.log('第一步响应数据:', response1.data);
+
+    // 从重定向URL中提取code
+    const location = response1.headers.location;
+    if (!location) {
+      console.error('登录失败：未获取到重定向URL');
+      throw new Error('登录失败：未获取到重定向URL');
+    }
+
+    console.log('重定向URL:', location);
+
+    const code = await getCode(location);
+    if (!code) {
+      console.error('获取access code失败');
+      throw new Error('获取access code失败');
+    }
+
+    console.log('获取到的code:', code);
+
+    // 第二步：获取login token
+    const url2 = 'https://account.huami.com/v2/client/login';
+    const deviceId = generateDeviceId();
+    const data2 = {
+      allow_registration: 'false',
+      app_name: HUAMI_CONFIG.appName,
+      app_version: HUAMI_CONFIG.appVersion,
+      code: code,
+      country_code: 'CN',
+      device_id: deviceId,
+      device_model: 'android_phone',
+      dn: 'api-user.huami.com,api-mifit.huami.com,app-analytics.huami.com',
+      grant_type: 'authorization_code',
+      lang: 'zh_CN',
+      os_version: '14.0',
+      source: HUAMI_CONFIG.appName,
+      third_name: isPhone ? 'huami_phone' : 'email'
+    };
+
+    console.log('第二步请求URL:', url2);
+    console.log('第二步请求数据:', data2);
+
+    const response2 = await axios.post(url2, data2, {
+      headers,
+      validateStatus: function (status) {
+        return status >= 200 && status < 400;
+      }
+    });
+
+    console.log('第二步响应状态码:', response2.status);
+    console.log('第二步响应头:', response2.headers);
+    console.log('第二步响应数据:', response2.data);
+
+    if (!response2.data || !response2.data.token_info) {
+      console.error('登录失败：未获取到token信息');
+      throw new Error('登录失败：未获取到token信息');
+    }
+
+    const loginToken = response2.data.token_info.login_token;
+    const userId = response2.data.token_info.user_id;
+
+    if (!loginToken || !userId) {
+      console.error('登录失败：token信息不完整');
+      throw new Error('登录失败：token信息不完整');
+    }
+
     console.log('登录成功,获取到loginToken和userId');
-
-    // 获取app token
-    console.log('开始获取appToken...');
-    const appToken = await zeppLifeSteps.getAppToken(loginToken);
-    console.log('获取appToken成功');
-
-    // 修改步数
-    console.log('开始更新步数...');
-    const result = await zeppLifeSteps.updateSteps(loginToken, appToken, targetSteps);
-    console.log('步数更新结果:', result);
-
-    // 返回结果
-    const response = {
-      success: true,
-      message: `步数修改成功: ${targetSteps}`,
-      data: result
-    };
-    console.log('返回响应:', response);
-    res.status(200).json(response);
+    return { loginToken, userId };
   } catch (error) {
-    console.error('API处理失败:', error);
-    const response = {
-      success: false,
-      message: error.message || '服务器内部错误'
-    };
-    console.log('返回错误响应:', response);
-    res.status(500).json(response);
+    console.error('登录失败:', error.message);
+    if (error.response) {
+      console.error('错误响应状态码:', error.response.status);
+      console.error('错误响应头:', error.response.headers);
+      console.error('错误响应数据:', error.response.data);
+    }
+    throw error;
   }
-} 
+}
+
+// 生成设备ID
+function generateDeviceId() {
+  // 生成符合格式的设备ID
+  const chars = 'ABCDEF0123456789';
+  let result = '';
+  for (let i = 0; i < 32; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// 获取app token
+async function getAppToken(loginToken) {
+  try {
+    // 从登录token获取app_token
+    const dn = encodeURIComponent('api-user.huami.com,api-mifit.huami.com,app-analytics.huami.com');
+    const url = `https://account-cn.huami.com/v1/client/app_tokens?app_name=${HUAMI_CONFIG.appName}&dn=${dn}&login_token=${loginToken}`;
+
+    console.log('获取appToken请求URL:', url);
+
+    const response = await axios.get(url, {
+      headers,
+      validateStatus: function (status) {
+        return status >= 200 && status < 400;
+      }
+    });
+
+    console.log('获取appToken响应状态码:', response.status);
+    console.log('获取appToken响应头:', response.headers);
+    console.log('获取appToken响应数据:', response.data);
+
+    if (!response.data || !response.data.token_info) {
+      console.error('获取appToken失败：未获取到token信息');
+      throw new Error('获取appToken失败：未获取到token信息');
+    }
+
+    const appToken = response.data.token_info.app_token;
+    if (!appToken) {
+      console.error('获取appToken失败：token信息不完整');
+      throw new Error('获取appToken失败：token信息不完整');
+    }
+
+    console.log('获取appToken成功:', appToken);
+    return appToken;
+  } catch (error) {
+    console.error('获取appToken失败:', error.message);
+    if (error.response) {
+      console.error('错误响应状态码:', error.response.status);
+      console.error('错误响应头:', error.response.headers);
+      console.error('错误响应数据:', error.response.data);
+    }
+    throw error;
+  }
+}
+
+// 获取时间戳
+async function getTime() {
+  try {
+    const response = await axios.get('http://mshopact.vivo.com.cn/tool/config', { headers });
+    return response.data.data.nowTime;
+  } catch (error) {
+    console.error('获取时间戳失败:', error.message);
+    throw error;
+  }
+}
+
+// 修改步数
+async function updateSteps(loginToken, appToken, steps) {
+  try {
+    const today = moment().format('YYYY-MM-DD');
+    console.log('当前日期:', today);
+    console.log('目标步数:', steps);
+
+    const dataJson = `[{"data_hr":"\/\/\/\/\/\/9L\/\/\/\/\/\/\/\/\/\/\/\/Vv\/\/\/\/\/\/\/\/\/\/\/0v\/\/\/\/\/\/\/\/\/\/\/9e\/\/\/\/\/0n\/a\/\/\/S\/\/\/\/\/\/\/\/\/\/\/\/0b\/\/\/\/\/\/\/\/\/\/1FK\/\/\/\/\/\/\/\/\/\/\/\/R\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/9PTFFpaf9L\/\/\/\/\/\/\/\/\/\/\/\/R\/\/\/\/\/\/\/\/\/\/\/\/0j\/\/\/\/\/\/\/\/\/\/\/9K\/\/\/\/\/\/\/\/\/\/\/\/Ov\/\/\/\/\/\/\/\/\/\/\/zf\/\/\/86\/zr\/Ov88\/zf\/Pf\/\/\/0v\/S\/8\/\/\/\/\/\/\/\/\/\/\/\/\/Sf\/\/\/\/\/\/\/\/\/\/\/z3\/\/\/\/\/\/0r\/Ov\/\/\/\/\/\/S\/9L\/zb\/Sf9K\/0v\/Rf9H\/zj\/Sf9K\/0\/\/N\/\/\/\/0D\/Sf83\/zr\/Pf9M\/0v\/Ov9e\/\/\/\/\/\/\/\/\/\/\/\/S\/\/\/\/\/\/\/\/\/\/\/\/zv\/\/z7\/O\/83\/zv\/N\/83\/zr\/N\/86\/z\/\/Nv83\/zn\/Xv84\/zr\/PP84\/zj\/N\/9e\/zr\/N\/89\/03\/P\/89\/z3\/Q\/9N\/0v\/Tv9C\/0H\/Of9D\/zz\/Of88\/z\/\/PP9A\/zr\/N\/86\/zz\/Nv87\/0D\/Ov84\/0v\/O\/84\/zf\/MP83\/zH\/Nv83\/zf\/N\/84\/zf\/Of82\/zf\/OP83\/zb\/Mv81\/zX\/R\/9L\/0v\/O\/9I\/0T\/S\/9A\/zn\/Pf89\/zn\/Nf9K\/07\/N\/83\/zn\/Nv83\/zv\/O\/9A\/0H\/Of8\/\/zj\/PP83\/zj\/S\/87\/zj\/Nv84\/zf\/Of83\/zf\/Of83\/zb\/Nv9L\/zj\/Nv82\/zb\/N\/85\/zf\/N\/9J\/zf\/Nv83\/zj\/Nv84\/0r\/Sv83\/zf\/MP\/\/\/zb\/Mv82\/zb\/Of85\/z7\/Nv8\/\/0r\/S\/85\/0H\/QP9B\/0D\/Nf89\/zj\/Ov83\/zv\/Nv8\/\/0f\/Sv9O\/0ZeXv\/\/\/\/\/\/\/\/\/\/\/1X\/\/\/\/\/\/\/\/\/\/\/9B\/\/\/\/\/\/\/\/\/\/\/\/TP\/\/\/1b\/\/\/\/\/\/0\/\/\/\/\/\/\/\/\/\/\/\/9N\/\/\/\/\/\/\/\/\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+\/v7+","date":"${today}","data":[{"start":0,"stop":1439,"value":"UA8AUBQAUAwAUBoAUAEAYCcAUBkAUB4AUBgAUCAAUAEAUBkAUAwAYAsAYB8AYB0AYBgAYCoAYBgAYB4AUCcAUBsAUB8AUBwAUBIAYBkAYB8AUBoAUBMAUCEAUCIAYBYAUBwAUCAAUBgAUCAAUBcAYBsAYCUAATIPYD0KECQAYDMAYB0AYAsAYCAAYDwAYCIAYB0AYBcAYCQAYB0AYBAAYCMAYAoAYCIAYCEAYCYAYBsAYBUAYAYAYCIAYCMAUB0AUCAAUBYAUCoAUBEAUC8AUB0AUBYAUDMAUDoAUBkAUC0AUBQAUBwAUA0AUBsAUAoAUCEAUBYAUAwAUB4AUAwAUCcAUCYAUCwKYDUAAUUlEC8IYEMAYEgAYDoAYBAAUAMAUBkAWgAAWgAAWgAAWgAAWgAAUAgAWgAAUBAAUAQAUA4AUA8AUAkAUAIAUAYAUAcAUAIAWgAAUAQAUAkAUAEAUBkAUCUAWgAAUAYAUBEAWgAAUBYAWgAAUAYAWgAAWgAAWgAAWgAAUBcAUAcAWgAAUBUAUAoAUAIAWgAAUAQAUAYAUCgAWgAAUAgAWgAAWgAAUAwAWwAAXCMAUBQAWwAAUAIAWgAAWgAAWgAAWgAAWgAAWgAAWgAAWgAAWREAWQIAUAMAWSEAUDoAUDIAUB8AUCEAUC4AXB4AUA4AWgAAUBIAUA8AUBAAUCUAUCIAUAMAUAEAUAsAUAMAUCwAUBYAWgAAWgAAWgAAWgAAWgAAWgAAUAYAWgAAWgAAWgAAUAYAWwAAWgAAUAYAXAQAUAMAUBsAUBcAUCAAWwAAWgAAWgAAWgAAWgAAUBgAUB4AWgAAUAcAUAwAWQIAWQkAUAEAUAIAWgAAUAoAWgAAUAYAUB0AWgAAWgAAUAkAWgAAWSwAUBIAWgAAUC4AWSYAWgAAUAYAUAoAUAkAUAIAUAcAWgAAUAEAUBEAUBgAUBcAWRYAUA0AWSgAUB4AUDQAUBoAXA4AUA8AUBwAUA8AUA4AUA4AWgAAUAIAUCMAWgAAUCwAUBgAUAYAUAAAUAAAUAAAUAAAUAAAUAAAUAAAUAAAUAAAWwAAUAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAeSEAeQ8AcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcBcAcAAAcAAAcCYOcBUAUAAAUAAAUAAAUAAAUAUAUAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcCgAeQAAcAAAcAAAcAAAcAAAcAAAcAYAcAAAcBgAeQAAcAAAcAAAegAAegAAcAAAcAcAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcCkAeQAAcAcAcAAAcAAAcAwAcAAAcAAAcAIAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcCIAeQAAcAAAcAAAcAAAcAAAcAAAeRwAeQAAWgAAUAAAUAAAUAAAUAAAUAAAcAAAcAAAcBoAeScAeQAAegAAcBkAeQAAUAAAUAAAUAAAUAAAUAAAUAAAcAAAcAAAcAAAcAAAcAAAcAAAegAAegAAcAAAcAAAcBgAeQAAcAAAcAAAcAAAcAAAcAAAcAkAegAAegAAcAcAcAAAcAcAcAAAcAAAcAAAcAAAcA8AeQAAcAAAcAAAeRQAcAwAUAAAUAAAUAAAUAAAUAAAUAAAcAAAcBEAcA0AcAAAWQsAUAAAUAAAUAAAUAAAUAAAcAAAcAoAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAYAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcBYAegAAcAAAcAAAegAAcAcAcAAAcAAAcAAAcAAAcAAAeRkAegAAegAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAEAcAAAcAAAcAAAcAUAcAQAcAAAcBIAeQAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcBsAcAAAcAAAcBcAeQAAUAAAUAAAUAAAUAAAUAAAUBQAcBYAUAAAUAAAUAoAWRYAWTQAWQAAUAAAUAAAUAAAcAAAcAAAcAAAcAAAcAAAcAMAcAAAcAQAcAAAcAAAcAAAcDMAeSIAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcAAAcBQAeQwAcAAAcAAAcAAAcAMAcAAAeSoAcA8AcDMAcAYAeQoAcAwAcFQAcEMAeVIAaTYAbBcNYAsAYBIAYAIAYAIAYBUAYCwAYBMAYDYAYCkAYDcAUCoAUCcAUAUAUBAAWgAAYBoAYBcAYCgAUAMAUAYAUBYAUA4AUBgAUAgAUAgAUAsAUAsAUA4AUAMAUAYAUAQAUBIAASsSUDAAUDAAUBAAYAYAUBAAUAUAUCAAUBoAUCAAUBAAUAoAYAIAUAQAUAgAUCcAUAsAUCIAUCUAUAoAUA4AUB8AUBkAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAAfgAA","tz":32,"did":"DA932FFFFE8816E7","src":24}],"summary":"{\\"v\\":6,\\"slp\\":{\\"st\\":1628296479,\\"ed\\":1628296479,\\"dp\\":0,\\"lt\\":0,\\"wk\\":0,\\"usrSt\\":-1440,\\"usrEd\\":-1440,\\"wc\\":0,\\"is\\":0,\\"lb\\":0,\\"to\\":0,\\"dt\\":0,\\"rhr\\":0,\\"ss\\":0},\\"stp\\":{\\"ttl\\":${steps},\\"dis\\":10627,\\"cal\\":510,\\"wk\\":41,\\"rn\\":50,\\"runDist\\":7654,\\"runCal\\":397,\\"stage\\":[]},\\"goal\\":8000,\\"tz\\":\\"28800\\"}","source":24,"type":0}]`;
+
+    const timestamp = new Date().getTime();
+    const t = String(Math.floor(Date.now() / 1000));
+    const deviceId = generateDeviceId();
+
+    const url = `https://api-mifit-cn2.huami.com/v1/data/band_data.json?t=${timestamp}`;
+    const data = `userid=${loginToken}&last_sync_data_time=${t}&device_type=0&last_deviceid=${deviceId}&data_json=${encodeURIComponent(dataJson)}`;
+
+    console.log('更新步数请求URL:', url);
+    console.log('更新步数请求数据:', data);
+
+    const response = await axios.post(url, data, {
+      headers: {
+        'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 14; SM-G9880 Build/UP1A.231005.007)',
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        'apptoken': appToken
+      },
+      validateStatus: function (status) {
+        return status >= 200 && status < 400;
+      }
+    });
+
+    console.log('更新步数响应状态码:', response.status);
+    console.log('更新步数响应头:', response.headers);
+    console.log('更新步数响应数据:', response.data);
+
+    if (response.data.code !== 1) {
+      console.error('更新步数失败:', response.data);
+      throw new Error('更新步数失败: ' + JSON.stringify(response.data));
+    }
+
+    console.log('更新步数成功');
+    return response.data;
+  } catch (error) {
+    console.error('更新步数失败:', error.message);
+    if (error.response) {
+      console.error('错误响应状态码:', error.response.status);
+      console.error('错误响应头:', error.response.headers);
+      console.error('错误响应数据:', error.response.data);
+    }
+    throw error;
+  }
+}
+
+// 导出函数
+module.exports = {
+  login,
+  getAppToken,
+  updateSteps
+};
